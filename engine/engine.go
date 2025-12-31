@@ -1,0 +1,51 @@
+package engine
+
+import (
+	"errors"
+)
+
+type Engine struct {
+	logPath string
+	index   map[string]string
+}
+
+func New(logPath string) (*Engine, error) {
+	e := &Engine{
+		logPath: logPath,
+		index:   make(map[string]string),
+	}
+
+	// Recover state from disk
+	if err := replayLog(e); err != nil {
+		return nil, err
+	}
+
+	return e, nil
+}
+
+func (e *Engine) Get(key string) (string, error) {
+	val, ok := e.index[key]
+	if !ok {
+		return "", errors.New("key not found")
+	}
+	return val, nil
+}
+
+func (e *Engine) Set(key, value string) error {
+	file, err := openLog(e.logPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	if err := writeRecord(file, key, value); err != nil {
+		return err
+	}
+
+	if err := file.Sync(); err != nil {
+		return err
+	}
+
+	e.index[key] = value
+	return nil
+}
