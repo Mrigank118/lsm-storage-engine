@@ -49,3 +49,23 @@ func (e *Engine) Set(key, value string) error {
 	e.index[key] = value
 	return nil
 }
+
+func (e *Engine) Delete(key string) error {
+	file, err := openLog(e.logPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	if err := writeRecord(file, key, ""); err != nil {
+		return err
+	}
+
+	if err := file.Sync(); err != nil {
+		return err
+	}
+
+	delete(e.index, key)
+
+	return nil
+}

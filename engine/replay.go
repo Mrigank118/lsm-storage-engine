@@ -51,7 +51,12 @@ func replayLog(e *Engine) error {
 			break
 		}
 
-		e.index[string(key)] = string(value)
+		if valLen == 0 {
+			delete(e.index, string(key))
+		} else {
+			e.index[string(key)] = string(value)
+		}
+
 	}
 
 	return nil

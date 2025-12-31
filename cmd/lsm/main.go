@@ -38,6 +38,12 @@ func main() {
 		}
 		fmt.Println(val)
 
+	case "DEL":
+		if err := db.Delete(os.Args[2]); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("OK")
+
 	default:
 		log.Fatal("unknown command")
 	}
