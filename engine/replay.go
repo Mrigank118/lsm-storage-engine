@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/binary"
+	"hash/crc32"
 	"io"
 	"os"
 )
@@ -9,7 +10,6 @@ import (
 func replayLog(e *Engine) error {
 	file, err := os.Open(e.logPath)
 	if err != nil {
-		// No log yet → fresh engine
 		return nil
 	}
 	defer file.Close()
@@ -36,6 +36,19 @@ func replayLog(e *Engine) error {
 		value := make([]byte, valLen)
 		if _, err := io.ReadFull(file, value); err != nil {
 			return err
+		}
+
+		var storedChecksum uint32
+		if err := binary.Read(file, binary.LittleEndian, &storedChecksum); err != nil {
+			return err
+		}
+
+		computedChecksum := crc32.ChecksumIEEE(
+			append(key, value...),
+		)
+
+		if storedChecksum != computedChecksum {
+			break
 		}
 
 		e.index[string(key)] = string(value)

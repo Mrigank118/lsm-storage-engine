@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/binary"
+	"hash/crc32"
 	"os"
 )
 
@@ -28,6 +29,12 @@ func writeRecord(file *os.File, key, value string) error {
 		return err
 	}
 	if _, err := file.Write([]byte(value)); err != nil {
+		return err
+	}
+
+	checksum := crc32.ChecksumIEEE(append([]byte(key), []byte(value)...))
+
+	if err := binary.Write(file, binary.LittleEndian, checksum); err != nil {
 		return err
 	}
 
