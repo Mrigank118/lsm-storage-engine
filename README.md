@@ -209,8 +209,3 @@ clarity in the storage core.
 
 ---
 
-## License
-
-MIT License.
-
----
