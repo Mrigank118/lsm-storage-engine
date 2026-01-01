@@ -2,6 +2,7 @@ package engine
 
 import (
 	"errors"
+	"os"
 )
 
 type Engine struct {
@@ -68,4 +69,36 @@ func (e *Engine) Delete(key string) error {
 	delete(e.index, key)
 
 	return nil
+}
+
+func (e *Engine) Compact() error {
+	tmpPath := e.logPath + ".compact"
+
+	// 1. Create new compacted log
+	file, err := os.OpenFile(
+		tmpPath,
+		os.O_CREATE|os.O_TRUNC|os.O_WRONLY,
+		0644,
+	)
+	if err != nil {
+		return err
+	}
+
+	// 2. Write current state only
+	for key, value := range e.index {
+		if err := writeRecord(file, key, value); err != nil {
+			file.Close()
+			return err
+		}
+	}
+
+	// 3. Ensure durability
+	if err := file.Sync(); err != nil {
+		file.Close()
+		return err
+	}
+	file.Close()
+
+	// 4. Atomically replace old log
+	return os.Rename(tmpPath, e.logPath)
 }
