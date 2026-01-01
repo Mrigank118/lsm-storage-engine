@@ -44,6 +44,12 @@ func main() {
 		}
 		fmt.Println("OK")
 
+	case "COMPACT":
+		if err := db.Compact(); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("Compaction complete")
+
 	default:
 		log.Fatal("unknown command")
 	}
