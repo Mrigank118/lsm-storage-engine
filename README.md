@@ -3,179 +3,121 @@
 
 A **log-structured, append-only key–value storage engine** implemented in Go.
 
-This project implements the **core storage mechanics** of an LSM-style system,
-including durable write-ahead logging, deterministic crash recovery, tombstone-
-based deletion semantics, and explicit persistence guarantees.
+This project implements the **core storage engine primitives** used in LSM-based
+systems: durable write-ahead logging, deterministic crash recovery,
+checksum-validated records, tombstone-based deletion, and crash-safe log
+compaction.
 
-The engine is designed with a strict focus on **correctness, crash safety, and
-clear invariants**, mirroring the foundational design principles used in systems
-such as LevelDB, RocksDB, and other LSM-based storage engines.
-
----
-
-## System Overview
-
-The engine maintains state through a strict separation of concerns:
-
-* a **volatile in-memory index (memtable)** holding the latest key state
-* a **durable append-only write-ahead log (WAL)** serving as the source of truth
-
-All mutations are persisted to disk **before** being reflected in memory.
-At any point, the on-disk log alone is sufficient to reconstruct the complete
-state of the system.
-
----
-
-## Architecture
-
-```
-Client Commands
-      ↓
-In-Memory Index (Memtable)
-      ↓
-Append-Only Write-Ahead Log
-      ↓
-Stable Storage (fsync-backed)
-```
+The design prioritizes **correctness, durability, and explicit invariants**.
 
 ---
 
 ## Core Invariants
 
-The engine enforces the following invariants at all times:
-
 * **Append-Only Persistence**
-  On-disk data is never modified in place. All updates are recorded as new log
-  entries.
+  On-disk data is never modified in place.
 
 * **Durability Before Acknowledgement**
-  A write is acknowledged only after the operating system confirms persistence
-  via `fsync`.
+  Writes are acknowledged only after `fsync`.
 
 * **Deterministic Recovery**
-  The engine state can always be reconstructed by replaying the log sequentially
-  from the beginning.
+  Engine state is reconstructed solely by replaying the log.
 
 * **Memory Is Non-Authoritative**
-  The in-memory index is treated as a cache derived from disk and may be safely
-  discarded and rebuilt.
+  The in-memory index is a derived cache and may be rebuilt at any time.
+
+* **Crash-Safe Compaction**
+  Compaction rewrites state into a new log and replaces the old log atomically.
 
 ---
 
 ## Data Model
 
-* Keys and values are arbitrary byte sequences
-* Updates to a key supersede all prior values
-* Deletions are represented explicitly via tombstone records
-* Record ordering is derived from log insertion order
+* Arbitrary byte keys and values
+* Latest record for a key supersedes all prior entries
+* Deletions are represented via **tombstone records**
+* Ordering is derived from log insertion order
 
 ---
 
-## Log Encoding
+## Log Format
 
-Each record is serialized using a deterministic, length-prefixed binary layout:
+Each record is encoded as:
 
 ```
 [key_length][key][value_length][value][checksum]
 ```
 
-* `key_length`   → 4 bytes (uint32)
-* `key`          → raw bytes
-* `value_length` → 4 bytes (uint32)
-* `value`        → raw bytes (empty for tombstones)
+* `key_length`   → uint32
+* `value_length` → uint32 (0 indicates tombstone)
 * `checksum`     → CRC32 over `key || value`
 
----
-
-## Write Path
-
-The write path strictly enforces durability and ordering:
-
-1. Serialize the record into binary form
-2. Append the record to the write-ahead log
-3. Issue `fsync` to ensure persistence
-4. Apply the mutation to the in-memory index
-5. Acknowledge completion
-
-```
-SET(key, value)
-  → append record
-  → fsync
-  → memtable[key] = value
-```
-
-Delete operations are encoded as tombstone records and follow the same path.
+This enables deterministic parsing and detection of partial or corrupted writes.
 
 ---
 
-## Read Path
+## Operations
+
+### Write Path
+
+```
+SET / DEL
+→ append record
+→ fsync
+→ update memtable
+```
+
+### Read Path
 
 Reads are served directly from the in-memory index.
 
-The write-ahead log is never consulted during normal reads, ensuring low read
-latency and simple execution semantics.
+### Recovery
+
+On startup, the log is replayed sequentially.
+Corrupted or partial trailing records are safely ignored.
+
+### Compaction
+
+Compaction rewrites the current in-memory state into a new log and atomically
+replaces the existing log, bounding disk usage and recovery time.
 
 ---
 
-## Crash Recovery
-
-On startup, the engine reconstructs state by sequentially replaying the
-write-ahead log:
-
-* records are parsed deterministically
-* checksums are validated
-* partial or corrupted trailing records are ignored safely
-* later records supersede earlier ones
-* tombstones remove keys from the reconstructed state
-
-No auxiliary metadata, checkpoints, or snapshots are required.
-
----
-
-## Compaction
-
-As the log grows, it accumulates obsolete records.
-
-Compaction rewrites the log by serializing the current in-memory state into a new
-log file and atomically replacing the old one. This bounds disk usage while
-preserving correctness and recovery guarantees.
-
----
-
-## Interface
-
-The engine exposes a minimal command-driven interface:
+## Command Interface
 
 ```bash
-go run ./cmd/lsm SET key value
-go run ./cmd/lsm GET key
-go run ./cmd/lsm DEL key
+go run ./cmd/lsm SET <key> <value>
+go run ./cmd/lsm GET <key>
+go run ./cmd/lsm DEL <key>
+go run ./cmd/lsm COMPACT
 ```
 
-Each invocation performs a single operation.
+---
+
+## Testing
+
+Correctness-focused tests validate durability, crash recovery, tombstones, and
+compaction safety.
+
+Run tests from the project root:
+
+```bash
+go test ./engine
+```
 
 ---
 
-## Implementation Characteristics
+## Versioning
 
-* Single-process execution model
-* Single append-only write-ahead log
-* Explicit synchronous persistence (`fsync`)
-* No background tasks or concurrency assumptions
-* All correctness guarantees are enforced synchronously
+Current version:
 
----
+```
+v0.1.0
+```
 
-## Roadmap
-
-Planned extensions include:
-
-* background compaction
-* concurrent readers and writers
-* sorted immutable SSTables
-* multi-level LSM structure
-* snapshotting and checkpoints
-* performance optimizations
+This release represents a **correctness-complete single-node storage engine
+core**.
 
 ---
+
 
