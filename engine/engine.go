@@ -102,3 +102,18 @@ func (e *Engine) Compact() error {
 	// 4. Atomically replace old log
 	return os.Rename(tmpPath, e.logPath)
 }
+
+func (e *Engine) Flush() error {
+	if len(e.index) == 0 {
+		return nil
+	}
+
+	sstablePath := e.logPath + ".sstable"
+
+	if err := WriteSSTable(sstablePath, e.index); err != nil {
+		return err
+	}
+
+	e.index = make(map[string]string)
+	return nil
+}
