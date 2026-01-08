@@ -3,7 +3,10 @@ package engine
 import (
 	"errors"
 	"os"
+	"path/filepath"
 )
+
+var ErrNotFound = errors.New("key not found")
 
 type Engine struct {
 	logPath string
@@ -16,7 +19,6 @@ func New(logPath string) (*Engine, error) {
 		index:   make(map[string]string),
 	}
 
-	// Recover state from disk
 	if err := replayLog(e); err != nil {
 		return nil, err
 	}
@@ -25,11 +27,35 @@ func New(logPath string) (*Engine, error) {
 }
 
 func (e *Engine) Get(key string) (string, error) {
-	val, ok := e.index[key]
-	if !ok {
-		return "", errors.New("key not found")
+	if val, ok := e.index[key]; ok {
+		return val, nil
 	}
-	return val, nil
+
+	dir := filepath.Dir(e.logPath)
+
+	tables, err := listSSTables(dir)
+	if err != nil {
+		return "", err
+	}
+
+	for _, path := range tables {
+		r, err := OpenSSTable(path)
+		if err != nil {
+			continue
+		}
+
+		val, ok, err := r.Get(key)
+		r.Close()
+
+		if err != nil {
+			return "", err
+		}
+		if ok {
+			return val, nil
+		}
+	}
+
+	return "", ErrNotFound
 }
 
 func (e *Engine) Set(key, value string) error {
@@ -108,9 +134,14 @@ func (e *Engine) Flush() error {
 		return nil
 	}
 
-	sstablePath := e.logPath + ".sstable"
+	dir := filepath.Dir(e.logPath)
 
-	if err := WriteSSTable(sstablePath, e.index); err != nil {
+	path, err := nextSSTablePath(dir)
+	if err != nil {
+		return err
+	}
+
+	if err := WriteSSTable(path, e.index); err != nil {
 		return err
 	}
 
