@@ -9,8 +9,9 @@ import (
 var ErrNotFound = errors.New("key not found")
 
 type Engine struct {
-	logPath string
-	index   map[string]string
+	logPath  string
+	index    map[string]string
+	manifest *Manifest
 }
 
 func New(logPath string) (*Engine, error) {
@@ -23,6 +24,13 @@ func New(logPath string) (*Engine, error) {
 		return nil, err
 	}
 
+	dir := filepath.Dir(logPath)
+	m, err := OpenManifest(dir)
+	if err != nil {
+		return nil, err
+	}
+	e.manifest = m
+
 	return e, nil
 }
 
@@ -33,12 +41,9 @@ func (e *Engine) Get(key string) (string, error) {
 
 	dir := filepath.Dir(e.logPath)
 
-	tables, err := listSSTables(dir)
-	if err != nil {
-		return "", err
-	}
+	for _, name := range e.manifest.SSTablesNewestFirst() {
+		path := filepath.Join(dir, name)
 
-	for _, path := range tables {
 		r, err := OpenSSTable(path)
 		if err != nil {
 			continue
@@ -142,6 +147,10 @@ func (e *Engine) Flush() error {
 	}
 
 	if err := WriteSSTable(path, e.index); err != nil {
+		return err
+	}
+
+	if err := e.manifest.AddSSTable(filepath.Base(path)); err != nil {
 		return err
 	}
 
