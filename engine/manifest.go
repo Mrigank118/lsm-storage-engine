@@ -42,9 +42,20 @@ func OpenManifest(dir string) (*Manifest, error) {
 			break // stop on malformed entry
 		}
 
-		if parts[0] == "ADD" {
+		switch parts[0] {
+		case "ADD":
 			m.sstables = append(m.sstables, parts[1])
+		case "REMOVE":
+			name := parts[1]
+			filtered := m.sstables[:0]
+			for _, s := range m.sstables {
+				if s != name {
+					filtered = append(filtered, s)
+				}
+			}
+			m.sstables = filtered
 		}
+
 	}
 
 	return m, nil
@@ -61,6 +72,19 @@ func (m *Manifest) AddSSTable(name string) error {
 		return err
 	}
 
+	return f.Sync()
+}
+
+func (m *Manifest) RemoveSSTable(name string) error {
+	f, err := os.OpenFile(m.path, os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	if _, err := fmt.Fprintf(f, "REMOVE %s\n", name); err != nil {
+		return err
+	}
 	return f.Sync()
 }
 

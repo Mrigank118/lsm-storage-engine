@@ -69,7 +69,6 @@ func TestDelete(t *testing.T) {
 }
 
 func TestCompaction(t *testing.T) {
-	t.Skip("compaction not yet implemented for SSTables + MANIFEST")
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "store.log")
 

@@ -102,38 +102,6 @@ func (e *Engine) Delete(key string) error {
 	return nil
 }
 
-func (e *Engine) Compact() error {
-	tmpPath := e.logPath + ".compact"
-
-	// 1. Create new compacted log
-	file, err := os.OpenFile(
-		tmpPath,
-		os.O_CREATE|os.O_TRUNC|os.O_WRONLY,
-		0644,
-	)
-	if err != nil {
-		return err
-	}
-
-	// 2. Write current state only
-	for key, value := range e.index {
-		if err := writeRecord(file, key, value); err != nil {
-			file.Close()
-			return err
-		}
-	}
-
-	// 3. Ensure durability
-	if err := file.Sync(); err != nil {
-		file.Close()
-		return err
-	}
-	file.Close()
-
-	// 4. Atomically replace old log
-	return os.Rename(tmpPath, e.logPath)
-}
-
 func (e *Engine) Flush() error {
 	if len(e.index) == 0 {
 		return nil
@@ -155,5 +123,68 @@ func (e *Engine) Flush() error {
 	}
 
 	e.index = make(map[string]string)
+	return nil
+}
+
+func (e *Engine) Compact() error {
+	dir := filepath.Dir(e.logPath)
+	sstables := e.manifest.SSTablesNewestFirst()
+
+	if len(sstables) <= 1 {
+		return nil // nothing to compact
+	}
+
+	merged := make(map[string]string)
+
+	for _, name := range sstables {
+		path := filepath.Join(dir, name)
+		r, err := OpenSSTable(path)
+		if err != nil {
+			return err
+		}
+
+		data, err := r.ReadAll()
+		r.Close()
+		if err != nil {
+			return err
+		}
+
+		for k, v := range data {
+			if _, seen := merged[k]; !seen {
+				if v != "" { // tombstone
+					merged[k] = v
+				}
+			}
+		}
+
+		r.Close()
+	}
+
+	// write new SSTable
+	newPath, err := nextSSTablePath(dir)
+	if err != nil {
+		return err
+	}
+	if err := WriteSSTable(newPath, merged); err != nil {
+		return err
+	}
+
+	// update MANIFEST
+	base := filepath.Base(newPath)
+	if err := e.manifest.AddSSTable(base); err != nil {
+		return err
+	}
+
+	for _, old := range sstables {
+		if err := e.manifest.RemoveSSTable(old); err != nil {
+			return err
+		}
+	}
+
+	// delete old files
+	for _, old := range sstables {
+		os.Remove(filepath.Join(dir, old))
+	}
+
 	return nil
 }

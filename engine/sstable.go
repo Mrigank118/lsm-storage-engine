@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -136,6 +137,39 @@ func nextSSTablePath(dir string) (string, error) {
 	}
 
 	return filepath.Join(dir, fmt.Sprintf("sstable-%06d.db", max+1)), nil
+}
+
+func (r *SSTableReader) ReadAll() (map[string]string, error) {
+	result := make(map[string]string)
+
+	for {
+		var keyLen uint32
+		if err := binary.Read(r.file, binary.BigEndian, &keyLen); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, err
+		}
+
+		key := make([]byte, keyLen)
+		if _, err := io.ReadFull(r.file, key); err != nil {
+			return nil, err
+		}
+
+		var valLen uint32
+		if err := binary.Read(r.file, binary.BigEndian, &valLen); err != nil {
+			return nil, err
+		}
+
+		val := make([]byte, valLen)
+		if _, err := io.ReadFull(r.file, val); err != nil {
+			return nil, err
+		}
+
+		result[string(key)] = string(val)
+	}
+
+	return result, nil
 }
 
 func listSSTables(dir string) ([]string, error) {
