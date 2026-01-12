@@ -86,7 +86,7 @@ Supported commands:
 
 ## Release Status
 
-**Current Version:** `v0.2.0`
+**Current Version:** `v0.3.0`
 **Stability:** Pre-release (Alpha)
 
 The engine is correctness-complete at the core level. Internal APIs and on-disk formats may evolve as compaction, WAL trimming, and indexing are introduced.
